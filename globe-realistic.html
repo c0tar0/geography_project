@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Глобус Земли</title>
+<style>
+:root{color-scheme:dark;--bg:#02040a;--p:rgba(10,16,30,.88);--t:#e8eefc;--m:#8fa0c4;--a:#ffd166;--l:rgba(255,255,255,.1);box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--t);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden}
+#cv{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+.box{position:absolute;background:var(--p);border:1px solid var(--l);border-radius:14px;padding:12px 14px;backdrop-filter:blur(8px)}
+#top{left:12px;top:calc(12px + env(safe-area-inset-top,0px));width:260px}
+#top h1{font-size:16px;margin:0 0 8px}
+input[type=text]{width:100%;box-sizing:border-box;background:#0b1224;color:var(--t);border:1px solid var(--l);border-radius:8px;padding:7px 9px;font:inherit}
+#time{left:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));width:260px}
+#time input[type=range]{width:100%}
+.row2{display:flex;gap:6px;margin-top:6px}
+button{background:#16213d;color:var(--t);border:1px solid var(--l);border-radius:8px;padding:5px 9px;font:inherit;cursor:pointer}
+button:hover{background:#1f2f57}
+#clk{font-variant-numeric:tabular-nums;color:var(--a);font-weight:600}
+#info{right:12px;top:calc(12px + env(safe-area-inset-top,0px));width:430px;max-height:calc(100% - 24px - env(safe-area-inset-top,0px));overflow:auto;display:none}
+#info h2{margin:0;font-size:22px}.sub{color:var(--m);margin-bottom:8px}
+.fl{font-size:44px;line-height:1}
+.r{display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-top:1px solid var(--l)}
+.r span{color:var(--m);flex:0 0 38%}.r b{font-weight:500;text-align:right}
+.chips{display:flex;flex-wrap:wrap;gap:5px;justify-content:flex-end}
+.chips button{padding:2px 7px;font-size:12px}
+a{color:var(--a)}.sum{margin:6px 0 10px;line-height:1.55}.wk details{border-top:1px solid var(--l);padding:4px 0}.wk summary{cursor:pointer;padding:3px 0}.wk p{margin:6px 0;font-size:13px;line-height:1.5}.wk img{float:right;max-width:45%;margin:0 0 8px 10px;border-radius:8px}.src{color:var(--m);font-size:12px}.h{margin:14px 0 2px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--a)}.tzr{display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-top:1px solid var(--l);font-size:13px}.tzr span:last-child{color:var(--a);font-variant-numeric:tabular-nums}
+#zm{right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));display:flex;gap:6px;padding:6px}
+#st{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;color:var(--m)}
+@media(max-width:700px){#info{left:8px;right:8px;top:auto;bottom:8px;width:auto;max-height:52%}#time{top:calc(84px + env(safe-area-inset-top,0px));bottom:auto}#top,#time{width:calc(100% - 24px)}#zm{display:none}}
+</style></head><body>
+<canvas id="cv"></canvas>
+<div id="st">Генерирую планету…</div>
+<div class="box" id="top"><h1>🌍 Глобус Земли</h1><input id="q" type="text" list="dl" placeholder="Найти страну…"><datalist id="dl"></datalist><label style="display:block;margin-top:6px;color:var(--m)"><input type="checkbox" id="bd" checked> Границы стран</label></div>
+<div class="box" id="time"><div>Время (UTC): <span id="clk"></span></div>
+<input id="sl" type="range" min="-1440" max="1440" step="5" value="0">
+<div class="row2"><button id="now">Сейчас</button><button id="play">▶ Ускорить</button></div></div>
+<div class="box" id="zm"><button id="zi">＋</button><button id="zo">－</button></div>
+<div class="box" id="info"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
+<script>
+const D2R=Math.PI/180,R2D=180/Math.PI,$=id=>document.getElementById(id);
+const REG={Africa:"Африка",Americas:"Америка",Asia:"Азия",Europe:"Европа",Oceania:"Океания",Antarctic:"Антарктика"};
+// ---------- noise ----------
+const Hh=(x,y,z)=>{let n=Math.imul(x,374761393)^Math.imul(y,668265263)^Math.imul(z,1274126177);n=Math.imul(n^(n>>>13),1274126177);return((n^(n>>>16))>>>0)/4294967295};
+const sm=t=>t*t*(3-2*t),cl=t=>Math.max(0,Math.min(1,t)),lp=(a,b,t)=>a+(b-a)*t;
+function vn(x,y,z){const X=Math.floor(x),Y=Math.floor(y),Z=Math.floor(z),u=sm(x-X),v=sm(y-Y),w=sm(z-Z);
+return lp(lp(lp(Hh(X,Y,Z),Hh(X+1,Y,Z),u),lp(Hh(X,Y+1,Z),Hh(X+1,Y+1,Z),u),v),lp(lp(Hh(X,Y,Z+1),Hh(X+1,Y,Z+1),u),lp(Hh(X,Y+1,Z+1),Hh(X+1,Y+1,Z+1),u),v),w)}
+const fbm=(x,y,z,o)=>{let s=0,a=.5,f=1;for(let i=0;i<o;i++){s+=a*vn(x*f,y*f,z*f);f*=2.03;a*=.5}return s*1.03};
+const mx=(a,b,t)=>[lp(a[0],b[0],t),lp(a[1],b[1],t),lp(a[2],b[2],t)];
+// ---------- geometry helpers ----------
+const polys=g=>g.type==="Polygon"?[g.coordinates]:g.coordinates;
+const inRing=(r,x,y)=>{let c=false;for(let i=0,j=r.length-1;i<r.length;j=i++){const a=r[i],b=r[j];if((a[1]>y)!=(b[1]>y)&&x<(b[0]-a[0])*(y-a[1])/(b[1]-a[1])+a[0])c=!c}return c};
+const inPoly=(p,x,y)=>{if(!inRing(p[0],x,y))return false;for(let k=1;k<p.length;k++)if(inRing(p[k],x,y))return false;return true};
+const ll2v=(lat,lon)=>new THREE.Vector3(Math.cos(lat*D2R)*Math.cos(lon*D2R),Math.sin(lat*D2R),-Math.cos(lat*D2R)*Math.sin(lon*D2R));
+function tracePath(ctx,f,W,H){ctx.beginPath();for(const p of polys(f.geometry))for(const r of p){r.forEach((q,i)=>{const x=(q[0]+180)/360*W,y=(90-q[1])/180*H;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.closePath()}}
+// ---------- scene ----------
+const cv=$("cv"),ren=new THREE.WebGLRenderer({canvas:cv,antialias:true});
+ren.setPixelRatio(Math.min(devicePixelRatio,2));
+const scene=new THREE.Scene(),cam=new THREE.PerspectiveCamera(45,1,.1,200);cam.position.z=3.4;
+const grp=new THREE.Group();scene.add(grp);
+const sunObj=new THREE.Vector3(1,0,0);
+function resize(){ren.setSize(innerWidth,innerHeight);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix()}
+addEventListener("resize",resize);resize();
+{const g=new THREE.BufferGeometry(),a=[];for(let i=0;i<1800;i++){const v=new THREE.Vector3().randomDirection?0:0;const u=Math.random()*2-1,t=Math.random()*6.283,s=Math.sqrt(1-u*u);a.push(60*s*Math.cos(t),60*u,60*s*Math.sin(t))}
+g.setAttribute("position",new THREE.Float32BufferAttribute(a,3));scene.add(new THREE.Points(g,new THREE.PointsMaterial({color:0xffffff,size:.18,sizeAttenuation:true})))}
+const VS="varying vec3 vN,vP;varying vec2 vUv;void main(){vN=normal;vP=position;vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}";
+let uni={t:{value:0},sun:{value:sunObj},cam:{value:new THREE.Vector3()}},globe,hlTex,hlCtx;
+function planet(dayC,nightC,cloudC){
+  const dm=new THREE.CanvasTexture(dayC),nm=new THREE.CanvasTexture(nightC),cm=new THREE.CanvasTexture(cloudC);
+  [dm,nm,cm].forEach(t=>{t.anisotropy=ren.capabilities.getMaxAnisotropy();t.wrapS=THREE.RepeatWrapping});
+  globe=new THREE.Mesh(new THREE.SphereGeometry(1,128,96),new THREE.ShaderMaterial({uniforms:{...uni,dayMap:{value:dm},nightMap:{value:nm},hMap:{value:new THREE.CanvasTexture(BUMP)},cMap:{value:cm},sMap:{value:new THREE.CanvasTexture(SPEC)},real:{value:REAL?1:0}},vertexShader:VS,fragmentShader:NEWFS||`
+uniform sampler2D dayMap,nightMap;uniform vec3 sun,cam;varying vec3 vN,vP;varying vec2 vUv;
+void main(){vec3 N=normalize(vN);float d=dot(N,sun);float day=smoothstep(-.1,.16,d);
+vec3 D=texture2D(dayMap,vUv).rgb,L=texture2D(nightMap,vUv).rgb;
+vec3 lit=D*(.06+1.05*max(d,0.));lit+=vec3(1.,.45,.2)*exp(-pow(d/.09,2.))*.16*D;
+float ocean=real>.5?texture2D(sMap,vUv).r:smoothstep(.0,.08,D.b-D.r-.04);vec3 V=normalize(cam-vP);vec3 R=reflect(-sun,N);
+lit+=vec3(1.,.95,.85)*pow(max(dot(R,V),0.),60.)*ocean*.7*step(0.,d);
+vec3 night=D*.035+L*1.3;gl_FragColor=vec4(mix(night,lit,day),1.);}`}));
+  grp.add(globe);
+  const cl=new THREE.Mesh(new THREE.SphereGeometry(1.012,96,64),new THREE.ShaderMaterial({transparent:true,depthWrite:false,uniforms:{...uni,cm:{value:cm}},vertexShader:VS,fragmentShader:`
+uniform sampler2D cm;uniform float t;uniform vec3 sun;varying vec3 vN;varying vec2 vUv;
+void main(){float d=dot(normalize(vN),sun);float day=smoothstep(-.15,.25,d);float a=texture2D(cm,vUv+vec2(t,0.)).r;
+vec3 c=mix(vec3(.015,.02,.035),vec3(.96,.97,1.)*(.22+.9*max(d,0.)),day);c+=vec3(1.,.5,.25)*exp(-pow(d/.1,2.))*.35;gl_FragColor=vec4(c,a*.9);}`}));
+  grp.add(cl);
+  const hc=document.createElement("canvas");hc.width=2048;hc.height=1024;hlCtx=hc.getContext("2d");hlTex=new THREE.CanvasTexture(hc);
+  grp.add(new THREE.Mesh(new THREE.SphereGeometry(1.004,128,96),new THREE.MeshBasicMaterial({map:hlTex,transparent:true,depthWrite:false})));
+  const at=new THREE.Mesh(new THREE.SphereGeometry(1.14,64,48),new THREE.ShaderMaterial({transparent:true,side:THREE.BackSide,blending:THREE.AdditiveBlending,depthWrite:false,uniforms:{sun:{value:sunObj}},
+  vertexShader:"varying vec3 vN,vO;void main(){vN=normalize(normalMatrix*normal);vO=normal;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}",
+  fragmentShader:"uniform vec3 sun;varying vec3 vN,vO;void main(){float i=pow(max(.72-dot(vN,vec3(0.,0.,1.)),0.),3.5)*2.2;float l=smoothstep(-.35,.5,dot(normalize(vO),sun));gl_FragColor=vec4(.25,.55,1.,1.)*i*(.15+.85*l);}"}));
+  grp.add(at);
+}
+// ---------- procedural Earth textures from real borders ----------
+function buildTextures(feats){
+  const W=2048,H=1024,mk=document.createElement("canvas");mk.width=W;mk.height=H;const mc=mk.getContext("2d");
+  mc.fillStyle="#000";mc.fillRect(0,0,W,H);mc.fillStyle="#fff";feats.forEach(f=>{tracePath(mc,f,W,H);mc.fill("evenodd")});
+  const md=mc.getImageData(0,0,W,H).data;
+  const dc=document.createElement("canvas"),nc=document.createElement("canvas");dc.width=nc.width=W;dc.height=nc.height=H;
+  const dctx=dc.getContext("2d"),nctx=nc.getContext("2d"),di=dctx.createImageData(W,H),ni=nctx.createImageData(W,H);
+  for(let y=0;y<H;y++){const lat=90-(y+.5)/H*180,a=Math.abs(lat),cy=Math.cos(lat*D2R),py=Math.sin(lat*D2R);
+    for(let x=0;x<W;x++){const lon=(x+.5)/W*360-180,px=cy*Math.cos(lon*D2R),pz=-cy*Math.sin(lon*D2R),i=(y*W+x)*4,m=md[i]/255;
+      const n1=fbm(px*6,py*6,pz*6,4);let c,lights=0;
+      let oc=mx([4,20,52],[16,72,124],fbm(px*4+5,py*4,pz*4,3));oc=mx(oc,[225,236,245],sm(cl((a-74+n1*8)/4)));
+      if(m>0){const n2=fbm(px*3+9,py*3,pz*3,3),e=fbm(px*14+3,py*14,pz*14,4);
+        let l=mx([34,78,36],[104,120,58],n1);
+        l=mx(l,[196,166,112],cl(Math.exp(-(((a-24)/10)**2))*sm(cl((n2-.3)*3))*1.2));
+        l=mx(l,[118,122,98],sm(cl((a-52)/14)));
+        l=mx(l,[120,104,92],cl((e-.5)*3.2)*(.5+.5*n1));
+        l=mx(l,[245,248,252],Math.max(sm(cl((a-68)/8)),sm(cl((e-.68)*6))*(a>30?1:.4)));
+        const k=.85+.3*n1;c=mx(oc,[l[0]*k,l[1]*k,l[2]*k],m);
+        if(a<68){const v=fbm(px*30,py*30,pz*30,3);lights=cl((v-.62)*8)*(n2>.33?1:.2)*m}
+      }else c=oc;
+      di.data[i]=c[0];di.data[i+1]=c[1];di.data[i+2]=c[2];di.data[i+3]=255;
+      ni.data[i]=255*lights;ni.data[i+1]=185*lights;ni.data[i+2]=95*lights;ni.data[i+3]=255}}
+  dctx.putImageData(di,0,0);nctx.putImageData(ni,0,0);
+  dctx.strokeStyle="rgba(255,255,255,.28)";dctx.lineWidth=1;feats.forEach(f=>{tracePath(dctx,f,W,H);dctx.stroke()});
+  const cw=1024,ch=512,cc=document.createElement("canvas");cc.width=cw;cc.height=ch;const cx=cc.getContext("2d"),ci=cx.createImageData(cw,ch);
+  for(let y=0;y<ch;y++){const lat=90-(y+.5)/ch*180,c2=Math.cos(lat*D2R),py=Math.sin(lat*D2R);
+    for(let x=0;x<cw;x++){const lon=(x+.5)/cw*360-180,v=fbm(c2*Math.cos(lon*D2R)*3+40,py*3,-c2*Math.sin(lon*D2R)*3,5),a=sm(cl((v-.5)/.22))*255,i=(y*cw+x)*4;
+      ci.data[i]=ci.data[i+1]=ci.data[i+2]=a;ci.data[i+3]=255}}
+  cx.putImageData(ci,0,0);return[dc,nc,cc]}
+// ---------- v2: relief, bathymetry, biomes, bump-lit shader ----------
+let BUMP,SPEC,REAL=false;
+function buildTextures2(feats){
+ const W=2048,H=1024,mk=document.createElement("canvas");mk.width=W;mk.height=H;const mc=mk.getContext("2d");
+ mc.fillStyle="#000";mc.fillRect(0,0,W,H);mc.fillStyle="#fff";feats.forEach(f=>{tracePath(mc,f,W,H);mc.fill("evenodd")});
+ const md=mc.getImageData(0,0,W,H).data,gw=512,gh=256,g=new Float32Array(gw*gh);
+ for(let y=0;y<gh;y++)for(let x=0;x<gw;x++)g[y*gw+x]=md[((y*4+2)*W+x*4+2)*4]/255;
+ const blur=r=>{const t=new Float32Array(gw*gh);for(let y=0;y<gh;y++)for(let x=0;x<gw;x++){let s=0;for(let k=-r;k<=r;k++)s+=g[y*gw+((x+k+gw)%gw)];t[y*gw+x]=s/(2*r+1)}
+  for(let y=0;y<gh;y++)for(let x=0;x<gw;x++){let s=0;for(let k=-r;k<=r;k++)s+=t[Math.max(0,Math.min(gh-1,y+k))*gw+x];g[y*gw+x]=s/(2*r+1)}};
+ blur(5);blur(5);blur(5);
+ const cs=(u,v)=>{const x=u*gw-.5,y=Math.max(0,Math.min(gh-1.001,v*gh-.5)),x0=Math.floor(x),y0=Math.floor(y),fx=x-x0,fy=y-y0,xa=(x0+gw)%gw,xb=(x0+1+gw)%gw;
+  return lp(lp(g[y0*gw+xa],g[y0*gw+xb],fx),lp(g[(y0+1)*gw+xa],g[(y0+1)*gw+xb],fx),fy)};
+ const S=(a,b,t)=>sm(cl((t-a)/(b-a)));
+ const mkc=()=>{const c=document.createElement("canvas");c.width=W;c.height=H;return c};
+ const dc=mkc(),nc=mkc(),bc=mkc(),dx=dc.getContext("2d"),nx=nc.getContext("2d"),bx=bc.getContext("2d"),di=dx.createImageData(W,H),ni=nx.createImageData(W,H),bi=bx.createImageData(W,H);
+ for(let y=0;y<H;y++){const lat=90-(y+.5)/H*180,a=Math.abs(lat),cy=Math.cos(lat*D2R),py=Math.sin(lat*D2R),v=(y+.5)/H;
+  for(let x=0;x<W;x++){const lon=(x+.5)/W*360-180,px=cy*Math.cos(lon*D2R),pz=-cy*Math.sin(lon*D2R),i=(y*W+x)*4,m=md[i]/255,cn=cs((x+.5)/W,v);
+   const n1=fbm(px*6,py*6,pz*6,4),n2=fbm(px*3+9,py*3+2,pz*3,3),oD=cl((.5-cn)*2.2),lD=cl((cn-.5)*2.2);
+   let oc=mx([3,14,40],[10,52,100],fbm(px*4+5,py*4,pz*4,3));oc=mx(oc,[34,128,158],(1-cl(oD*4))*.75);oc=mx(oc,[225,236,245],S(0,1,(a-74+n1*8)/4));
+   let c=oc,lights=0,h=0;
+   if(m>0){const rg=1-Math.abs(2*fbm(px*9+1,py*9,pz*9,4)-1),mt=S(.52,.75,fbm(px*2.2+7,py*2.2,pz*2.2,3));h=cl(lD*.35+mt*rg*rg*.85);
+    let w=a<12?.85:a<28?lp(.85,.2,(a-12)/16):a<45?lp(.2,.6,(a-28)/17):.65;w=lp(w,n2*1.4-.1,.55)-(a>18&&a<48?.45*cl((lD-.4)*2):0);
+    let l=mx([208,178,122],[176,126,84],n1);l=mx(l,[120,124,66],S(.32,.5,w));l=mx(l,a<26?[18,58,26]:[40,82,42],S(.5,.78,w));
+    l=mx(l,[44,66,50],S(48,58,a)*.9);l=mx(l,[130,132,112],S(60,70,a));l=mx(l,[112,100,90],S(.25,.6,h));
+    l=mx(l,[246,249,252],Math.max(S(68,78,a+n1*5),S(.6,.85,h+a*.004)));
+    const k=.82+.36*n1;c=mx(oc,[l[0]*k,l[1]*k,l[2]*k],m);
+    if(a<68){const lv=fbm(px*30,py*30,pz*30,3);lights=cl((lv-.6)*8)*(n2>.3?1:.2)*(.35+.65*(1-lD))*m}}
+   di.data[i]=c[0];di.data[i+1]=c[1];di.data[i+2]=c[2];di.data[i+3]=255;
+   ni.data[i]=255*lights;ni.data[i+1]=185*lights;ni.data[i+2]=95*lights;ni.data[i+3]=255;
+   bi.data[i]=bi.data[i+1]=bi.data[i+2]=255*h*m;bi.data[i+3]=255}}
+ dx.putImageData(di,0,0);nx.putImageData(ni,0,0);bx.putImageData(bi,0,0);
+ dx.strokeStyle="rgba(255,255,255,.22)";dx.lineWidth=1;feats.forEach(f=>{tracePath(dx,f,W,H);dx.stroke()});
+ const cw=1024,ch=512,cc=document.createElement("canvas");cc.width=cw;cc.height=ch;const cx=cc.getContext("2d"),ci=cx.createImageData(cw,ch);
+ for(let y=0;y<ch;y++){const lat=90-(y+.5)/ch*180,c2=Math.cos(lat*D2R),py=Math.sin(lat*D2R),band=.75+.25*Math.cos(lat*D2R*6);
+  for(let x=0;x<cw;x++){const lon=(x+.5)/cw*360-180,qx=c2*Math.cos(lon*D2R)*3+40,qz=-c2*Math.sin(lon*D2R)*3,wp=fbm(qx*.7,py*2,qz*.7,3)*1.6;
+   const f=fbm(qx+wp,py*3+wp,qz+wp,5)*band,a=S(.46,.7,f)*255,j=(y*cw+x)*4;ci.data[j]=ci.data[j+1]=ci.data[j+2]=a;ci.data[j+3]=255}}
+ cx.putImageData(ci,0,0);return[dc,nc,cc,bc]}
+const NEWFS=`
+uniform sampler2D dayMap,nightMap,hMap,cMap,sMap;uniform float t,real;uniform vec3 sun,cam;varying vec3 vN,vP;varying vec2 vUv;
+float hh(vec3 p){p=fract(p*.3183099+.1);p*=17.;return fract(p.x*p.y*p.z*(p.x+p.y+p.z));}
+float vnz(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
+return mix(mix(mix(hh(i),hh(i+vec3(1,0,0)),f.x),mix(hh(i+vec3(0,1,0)),hh(i+vec3(1,1,0)),f.x),f.y),mix(mix(hh(i+vec3(0,0,1)),hh(i+vec3(1,0,1)),f.x),mix(hh(i+vec3(0,1,1)),hh(i+vec3(1,1,1)),f.x),f.y),f.z);}
+void main(){vec3 N=normalize(vN);vec3 V=normalize(cam-vP);
+vec3 T=normalize(cross(vec3(0.,1.,0.),N));vec3 B=cross(N,T);
+float e=1./2048.,f=1./1024.;
+float hE=texture2D(hMap,vUv+vec2(e,0.)).r-texture2D(hMap,vUv-vec2(e,0.)).r;
+float hN=texture2D(hMap,vUv+vec2(0.,f)).r-texture2D(hMap,vUv-vec2(0.,f)).r;
+vec3 Nb=normalize(N-7.*(hE*T+hN*B));float h0=texture2D(hMap,vUv).r;if(real>.5){vec3 nn=texture2D(hMap,vUv).rgb*2.-1.;Nb=normalize(N+1.3*(T*nn.x+B*nn.y));h0=.25*(1.-texture2D(sMap,vUv).r);}Nb=normalize(Nb+.14*(.3+2.*h0)*step(.004,h0)*(vec3(vnz(vP*700.),vnz(vP*700.+3.),vnz(vP*700.+9.))-.5));
+float d=dot(N,sun);float day=smoothstep(-.1,.16,d);float db=max(dot(Nb,sun),0.);
+vec3 D=texture2D(dayMap,vUv).rgb,L=texture2D(nightMap,vUv).rgb;
+float ocean=real>.5?texture2D(sMap,vUv).r:smoothstep(.0,.08,D.b-D.r-.04);
+float dn=vnz(vP*160.)*.5+vnz(vP*480.)*.3+vnz(vP*1400.)*.2;D*=mix(.78+.44*dn,1.,ocean);
+vec3 lit=D*(.05+1.1*db*smoothstep(-.02,.12,d));
+vec3 st=sun-N*d;float cosl=max(sqrt(1.-N.y*N.y),.15);vec2 so=vec2(dot(st,T)/(6.283*cosl),dot(st,B)/3.1416)*.02;lit*=1.-.5*texture2D(cMap,vUv+so+vec2(t,0.)).r*smoothstep(0.,.3,d);lit+=vec3(1.,.45,.2)*exp(-pow(d/.09,2.))*.14*D;
+vec3 Nw=normalize(N+.025*(vec3(vnz(vP*420.),vnz(vP*420.+7.),vnz(vP*420.+13.))-.5));vec3 R=reflect(-sun,Nw);float sp=pow(max(dot(R,V),0.),90.)*.9+pow(max(dot(R,V),0.),14.)*.12;
+lit+=vec3(1.,.95,.85)*sp*ocean*step(0.,d);
+float fr=pow(1.-max(dot(N,V),0.),3.);
+lit+=vec3(.3,.5,.9)*fr*.3*ocean*max(d,0.);
+lit+=vec3(.35,.6,1.)*pow(1.-max(dot(N,V),0.),2.2)*.45*smoothstep(-.25,.4,d);
+vec3 night=D*.03+L*1.3+vec3(.35,.6,1.)*fr*.05;
+vec3 col=mix(night,lit,day)*1.2;col=clamp((col*(2.51*col+.03))/(col*(2.43*col+.59)+.14),0.,1.);gl_FragColor=vec4(pow(col,vec3(.95)),1.);}`;
+function addAtm(){grp.add(new THREE.Mesh(new THREE.SphereGeometry(1.045,64,48),new THREE.ShaderMaterial({transparent:true,side:THREE.BackSide,blending:THREE.AdditiveBlending,depthWrite:false,uniforms:{sun:{value:sunObj}},
+ vertexShader:"varying vec3 vN,vO;void main(){vN=normalize(normalMatrix*normal);vO=normal;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}",
+ fragmentShader:"uniform vec3 sun;varying vec3 vN,vO;void main(){float i=pow(max(.9-dot(vN,vec3(0.,0.,1.)),0.),5.)*3.;float l=smoothstep(-.3,.5,dot(normalize(vO),sun));float tw=exp(-pow(dot(normalize(vO),sun)/.22,2.));gl_FragColor=vec4(mix(vec3(.4,.65,1.),vec3(1.,.5,.22),tw*.85),1.)*i*(.1+.9*l+tw*.6);}"})))}
+// ---------- sun ----------
+function sunAt(ms){const d=new Date(ms),h=d.getUTCHours()+d.getUTCMinutes()/60+d.getUTCSeconds()/3600,n=Math.floor((ms-Date.UTC(d.getUTCFullYear(),0,0))/864e5),
+B=2*Math.PI*(n-81)/364,E=9.87*Math.sin(2*B)-7.53*Math.cos(B)-1.5*Math.sin(B),dec=-23.44*Math.cos(2*Math.PI/365*(n+10)),lon=15*(12-h)-E/4;
+sunObj.copy(ll2v(dec,lon)).normalize()}
+let tOff=0,playing=false;
+$("sl").oninput=e=>{tOff=+e.target.value*6e4};
+$("now").onclick=()=>{tOff=0;$("sl").value=0;playing=false;$("play").textContent="▶ Ускорить"};
+$("play").onclick=()=>{playing=!playing;$("play").textContent=playing?"⏸ Пауза":"▶ Ускорить"};
+// ---------- interaction ----------
+let down=null,moved=0,zt=null,tq=null;
+cv.addEventListener("pointerdown",e=>{down={x:e.clientX,y:e.clientY};moved=0;tq=null;cv.setPointerCapture(e.pointerId);cv.style.cursor="grabbing"});
+cv.addEventListener("pointermove",e=>{if(!down)return;const dx=e.clientX-down.x,dy=e.clientY-down.y;down={x:e.clientX,y:e.clientY};moved+=Math.abs(dx)+Math.abs(dy);
+const k=.0042*(cam.position.z-1)/1.4;grp.quaternion.premultiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(dy*k,dx*k,0)))});
+cv.addEventListener("pointerup",e=>{cv.style.cursor="grab";if(down&&moved<6)pick(e);down=null});
+cv.addEventListener("wheel",e=>{e.preventDefault();zoom(e.deltaY>0?1.08:.93)},{passive:false});
+const zoom=f=>{cam.position.z=Math.max(1.35,Math.min(7,cam.position.z*f))};
+$("zi").onclick=()=>zoom(.8);$("zo").onclick=()=>zoom(1.25);
+const rc=new THREE.Raycaster(),mv=new THREE.Vector2();
+function pick(e){mv.set(e.clientX/innerWidth*2-1,-(e.clientY/innerHeight)*2+1);rc.setFromCamera(mv,cam);const h=rc.intersectObject(globe)[0];if(!h)return;
+const p=grp.worldToLocal(h.point.clone()).normalize(),lat=Math.asin(p.y)*R2D,lon=Math.atan2(-p.z,p.x)*R2D;
+const f=entries.find(en=>lon>=en.b[0]&&lon<=en.b[2]&&lat>=en.b[1]&&lat<=en.b[3]&&en.polys.some(q=>inPoly(q,lon,lat)));if(f)show(f)}
+// ---------- data & panel ----------
+let entries=[],byC={},sel=null;
+const nf=n=>n.toLocaleString("ru-RU"),row=(k,v)=>v||v===0?`<div class="r"><span>${k}</span><b>${v}</b></div>`:"";
+function show(en,rot=true){sel=en;try{history.replaceState(null,"","#"+(en.c.cca3||""))}catch(e){}const c=en.c,n=c.name||{common:en.name},ru=en.ru;
+hlCtx.clearRect(0,0,2048,1024);hlCtx.fillStyle="rgba(255,209,102,.38)";hlCtx.strokeStyle="rgba(255,209,102,.95)";hlCtx.lineWidth=2.5;tracePath(hlCtx,en.f,2048,1024);hlCtx.fill("evenodd");hlCtx.stroke();hlTex.needsUpdate=true;
+const ll=c.latlng||en.ctr;if(rot&&ll)tq=new THREE.Quaternion().setFromUnitVectors(ll2v(ll[0],ll[1]),new THREE.Vector3(0,0,1));
+const nat=n.native?Object.values(n.native).map(x=>x.common).filter((x,i,a)=>a.indexOf(x)===i).join(", "):"";
+const cur=c.currencies?Object.entries(c.currencies).map(([k,v])=>`${v.name} (${k}${v.symbol?", "+v.symbol:""})`).join("<br>"):"";
+const lang=c.languages?Object.values(c.languages).join(", "):"";
+const dem=c.demonyms&&c.demonyms.eng?c.demonyms.eng.m:"";
+const idd=c.idd&&c.idd.root?c.idd.root+((c.idd.suffixes||[]).length===1?c.idd.suffixes[0]:""):"";
+const bd=(c.borders||[]).map(b=>byC[b]?`<button data-c="${b}">${byC[b].ru}</button>`:"").join("");
+const cp=(c.capitalInfo&&c.capitalInfo.latlng)||ll;let dn="";if(cp)dn=ll2v(cp[0],cp[1]).dot(sunObj)>0?"☀️ день":"🌙 ночь";
+const dens=c.population&&c.area?nf(Math.round(c.population/c.area*10)/10)+" чел./км²":"";
+$("info").style.display="block";$("info").scrollTop=0;
+$("info").innerHTML=`<div style="display:flex;gap:12px;align-items:center"><div class="fl">${c.flag||""}</div><div><h2>${ru}</h2><div class="sub">${n.official||""}</div></div></div>
+${row("Название (англ.)",n.common)}${row("На местном языке",nat)}${row("Коды",c.cca2?`${c.cca2} / ${c.cca3} / ${c.ccn3||""}`+(c.cioc?" / МОК "+c.cioc:""):"")}
+${row("Столица",(c.capital||[]).join(", "))}${row("Регион",(REG[c.region]||c.region||"")+(c.subregion?", "+c.subregion:""))}
+${row("Статус",c.status?(c.unMember?"член ООН · ":"не член ООН · ")+(c.independent?"независимое":"зависимая территория"):"")}
+${row("Площадь",c.area?nf(c.area)+" км²":"")}${row("Население",c.population?nf(c.population):"")}${row("Плотность",dens)}
+${row("Координаты",ll?`${ll[0].toFixed(1)}°, ${ll[1].toFixed(1)}°`:"")}${row("Без выхода к морю",c.landlocked===undefined?"":c.landlocked?"да":"нет")}
+${row("Языки",lang)}${row("Жители",dem)}${row("Валюта",cur)}${row("Телефонный код",idd)}${row("Домен",(c.tld||[]).join(", "))}
+${row("Движение",c.car?(c.car.side==="right"?"правостороннее":"левостороннее")+(c.car.signs?` · знак ${c.car.signs.join(", ")}`:""):"")}
+${row("Начало недели",c.startOfWeek)}${row("Индекс Джини",c.gini?Object.entries(c.gini).map(([y,v])=>`${v} (${y})`).join(", "):"")}${row("ФИФА",c.fifa)}${row("Почтовый индекс",c.postalCode&&c.postalCode.format?c.postalCode.format:"")}
+${row("Альт. названия",(c.altSpellings||[]).slice(0,6).join(", "))}
+${row("Часовой пояс (≈ по долготе)",cp?`<span class="tz" data-l="${cp[1]}"></span> · ${dn}`:"")}
+${bd?`<div class="r"><span>Соседи</span><div class="chips">${bd}</div></div>`:row("Соседи",c.borders?"нет":"")}
+<div class="r"><span>Ссылки</span><b><a target="_blank" rel="noopener" href="https://ru.wikipedia.org/wiki/${encodeURIComponent(ru)}">Википедия</a>${c.maps?` · <a target="_blank" rel="noopener" href="${c.maps.googleMaps}">Карта</a>`:""}</b></div>`;
+$("info").querySelectorAll("[data-c]").forEach(b=>b.onclick=()=>show(byC[b.dataset.c]));extra(en)}
+$("q").onchange=e=>{const v=e.target.value.trim().toLowerCase(),f=entries.find(x=>x.ru.toLowerCase()===v)||entries.find(x=>x.ru.toLowerCase().startsWith(v));if(f)show(f)};
+// ---------- extended encyclopedia data ----------
+let XD={},TZ=null;
+const nz=s=>String(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/^the/,"").replace(/[^a-z]/g,"");
+async function firstOk(u,vs){for(const v of vs){try{return{v,d:await imp(u.replace("@V","@"+v))}}catch(e){}}return null}
+async function loadXD(){
+ const fl={population:"population",area:"surface-area",gov:"government-type",indep:"independence-date",life:"life-expectancy",rel:"religion",elev:"elevation",temp:"yearly-average-temperature",dish:"national-dish",sym:"national-symbol",coast:"costline",cities:"cities",height:"avg-male-height",bar:"barcode-prefix"};
+ const B="https://cdn.jsdelivr.net/npm/country-json@V/src/country-by-",f=await firstOk(B+"population.json/+esm",["1.2.0","1.1.0","1.0.1","1.0.0"]);
+ if(f){const put=(k,arr)=>(arr||[]).forEach(r=>{const kk=Object.keys(r).find(x=>x!=="country");if(kk&&r[kk]!==null&&r[kk]!==""){const n=nz(r.country);(XD[n]=XD[n]||{})[k]=r[kk]}});put("population",f.d);
+  await Promise.all(Object.entries(fl).slice(1).map(async([k,v])=>{try{put(k,await imp(B.replace("@V","@"+f.v)+v+".json/+esm"))}catch(e){}}))}
+ const t=await firstOk("https://cdn.jsdelivr.net/npm/countries-and-timezones@V/+esm",["3.8.0","3.7.2","3.6.0"]);if(t)TZ=t.d}
+function extra(en){const c=en.c,box=$("info"),ru=en.ru;
+ const ks=[c.name&&c.name.common,c.name&&c.name.official,...(c.altSpellings||[]),en.name].map(nz),x=Object.assign({},...ks.map(k=>XD[k]).filter(Boolean).reverse());
+ const pop=+x.population||c.population,area=+x.area||c.area,nb=(c.borders||[]).filter(b=>byC[b]).map(b=>byC[b].ru),cap=(c.capital||[])[0];
+ const lang=c.languages?Object.values(c.languages):[],ll=c.latlng;
+ const sum=[`${ru} — ${c.independent===false?"зависимая территория":"государство"}${c.subregion?` (регион: ${c.subregion})`:""}${cap?`, столица — ${cap}`:""}.`,
+  area?`Площадь — ${nf(area)} км².`:"",pop?`Население — около ${nf(pop)} чел.`:"",x.gov?`Форма правления: ${x.gov}.`:"",
+  nb.length?`Граничит с: ${nb.join(", ")}.`:(c.landlocked===false?"Сухопутных границ нет — это островное или полуостровное положение.":""),lang.length?`Языки: ${lang.join(", ")}.`:""].filter(Boolean).join(" ");
+ const S=(t,rs)=>{const b=rs.filter(Boolean).join("");return b?`<div class="h">${t}</div>${b}`:""};
+ const ns=ll?(ll[0]>=0?"северное":"южное")+" / "+(ll[1]>=0?"восточное":"западное")+" полушарие":"";
+ const tzs=TZ&&c.cca2&&TZ.getCountry(c.cca2)?TZ.getCountry(c.cca2).timezones.slice(0,14).map(id=>{let o="";try{o=TZ.getTimezone(id).utcOffsetStr}catch(e){}return`<div class="tzr"><span>${id.replace(/_/g," ")} <small style="color:var(--m)">UTC${o}</small></span><span data-tz="${id}"></span></div>`}).join(""):"";
+ const cities=Array.isArray(x.cities)?x.cities.slice(0,14).join(", "):x.cities;
+ const g=[S("Государство и история",[row("Форма правления",x.gov),row("Независимость",x.indep),row("Член ООН",c.unMember===undefined?"":c.unMember?"да":"нет"),row("Жители",c.demonyms&&c.demonyms.eng?c.demonyms.eng.m+" / "+c.demonyms.eng.f:"")]),
+  S("География",[row("Континент / регион",(REG[c.region]||c.region||"")+(c.subregion?" · "+c.subregion:"")),row("Положение",ns),row("Площадь",area?nf(area)+" км²":""),row("Длина береговой линии",x.coast!==undefined?nf(+x.coast)+" км":""),row("Средняя высота",x.elev?nf(+x.elev)+" м":""),row("Средняя температура",x.temp?x.temp+" °C":""),row("Число соседей",c.borders?c.borders.length:"")]),
+  S("Население и общество",[row("Население",pop?nf(pop):""),row("Плотность",pop&&area?nf(Math.round(pop/area*10)/10)+" чел./км²":""),row("Продолжительность жизни",x.life?x.life+" лет":""),row("Средний рост мужчин",x.height?x.height+" см":""),row("Религия",x.rel),row("Языки",lang.join(", "))]),
+  S("Связь и торговля",[row("Штрихкод (GS1)",x.bar),row("Почтовый формат",c.postalCode&&c.postalCode.format?c.postalCode.format:"")]),
+  S("Культура",[row("Национальное блюдо",x.dish),row("Национальный символ",x.sym),row("Крупные города",cities)]),
+  tzs?`<div class="h">Часовые пояса (сейчас)</div>${tzs}`:"",
+  S("Источники",[`<div class="r"><span>Читать дальше</span><b><a target="_blank" rel="noopener" href="https://en.wikipedia.org/wiki/${encodeURIComponent((c.name&&c.name.common)||en.name)}">Wikipedia EN</a> · <a target="_blank" rel="noopener" href="https://ru.wikivoyage.org/wiki/${encodeURIComponent(ru)}">Wikivoyage</a> · <a target="_blank" rel="noopener" href="https://www.cia.gov/the-world-factbook/countries/${((c.name&&c.name.common)||en.name).toLowerCase().replace(/[^a-z]+/g,"-")}/">Factbook</a>${c.maps&&c.maps.openStreetMaps?` · <a target="_blank" rel="noopener" href="${c.maps.openStreetMaps}">OSM</a>`:""}</b></div>`])].join("");
+ const fl0=box.querySelector(".r");if(fl0)fl0.insertAdjacentHTML("beforebegin",`<p class="sum">${sum}</p>`);
+ box.insertAdjacentHTML("beforeend",g);live(en)}
+// ---------- sun glare + Milky Way ----------
+const glc=document.createElement("canvas");glc.width=glc.height=256;
+{const x=glc.getContext("2d"),g=x.createRadialGradient(128,128,0,128,128,128);g.addColorStop(0,"rgba(255,250,235,1)");g.addColorStop(.07,"rgba(255,236,195,.85)");g.addColorStop(.28,"rgba(255,205,130,.2)");g.addColorStop(1,"rgba(255,180,100,0)");x.fillStyle=g;x.fillRect(0,0,256,256)}
+const glow=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(glc),blending:THREE.AdditiveBlending,depthWrite:false,transparent:true}));glow.scale.set(22,22,1);scene.add(glow);
+{const a=[],c=[],ax=new THREE.Vector3(1,0,.3).normalize();for(let i=0;i<9000;i++){const u=Math.random()*6.283,s=(Math.random()+Math.random()+Math.random()-1.5)*.32,v=new THREE.Vector3(Math.cos(u),s,Math.sin(u)).normalize().applyAxisAngle(ax,.9),k=.2+Math.random()*.4*(1-Math.abs(s));a.push(v.x*70,v.y*70,v.z*70);c.push(k,k*.95,k*.88+.1*Math.random())}
+ const g=new THREE.BufferGeometry();g.setAttribute("position",new THREE.Float32BufferAttribute(a,3));g.setAttribute("color",new THREE.Float32BufferAttribute(c,3));scene.add(new THREE.Points(g,new THREE.PointsMaterial({vertexColors:true,size:.16,transparent:true,opacity:.75,depthWrite:false})))}
+// ---------- live data: World Bank + Wikipedia (works when hosted or opened locally) ----------
+const esc=t=>t.replace(/[&<>]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[m]));
+const J=async u=>(await fetch(u)).json();
+const money=v=>v>=1e12?(v/1e12).toFixed(2)+" трлн $":v>=1e9?(v/1e9).toFixed(1)+" млрд $":nf(Math.round(v))+" $";
+const pct=v=>v.toFixed(1)+" %",num=v=>nf(Math.round(v*100)/100);
+const IND=[["NY.GDP.MKTP.CD","ВВП (номинал)",money],["NY.GDP.PCAP.CD","ВВП на душу населения",v=>nf(Math.round(v))+" $"],["NY.GDP.MKTP.KD.ZG","Рост ВВП",pct],["FP.CPI.TOTL.ZG","Инфляция",pct],["SL.UEM.TOTL.ZS","Безработица",pct],["SI.POV.GINI","Индекс Джини",num],
+["SP.POP.TOTL","Население",v=>nf(v)],["SP.POP.GROW","Прирост населения",pct],["SP.URB.TOTL.IN.ZS","Городское население",pct],["SP.DYN.LE00.IN","Продолжительность жизни",v=>num(v)+" лет"],["SP.DYN.TFRT.IN","Рождаемость (детей на женщину)",num],["SP.DYN.IMRT.IN","Детская смертность (на 1000)",num],
+["SE.ADT.LITR.ZS","Грамотность",pct],["SH.XPD.CHEX.GD.ZS","Расходы на здравоохранение (% ВВП)",pct],["MS.MIL.XPND.GD.ZS","Военные расходы (% ВВП)",pct],["IT.NET.USER.ZS","Пользователи интернета",pct],["EG.ELC.ACCS.ZS","Доступ к электричеству",pct],
+["AG.LND.FRST.ZS","Площадь лесов",pct],["AG.LND.AGRI.ZS","Сельхозземли",pct],["EN.ATM.CO2E.PC","CO₂ на человека (т)",num],["NE.EXP.GNFS.ZS","Экспорт (% ВВП)",pct],["BX.KLT.DINV.WD.GD.ZS","Прямые иностранные инвестиции (% ВВП)",pct]];
+function wk(t){let h="",open=false,skip=false;const S=/^(Примечания|Ссылки|Литература|См\. также|Источники|Комментарии|Галерея)/;
+ t.split("\n").forEach(L=>{L=L.trim();if(!L)return;const m=L.match(/^(=+)\s*(.+?)\s*=+$/);
+  if(m){if(m[1].length===2){if(open)h+="</details>";skip=S.test(m[2]);open=!skip;if(!skip)h+=`<details><summary><b>${esc(m[2])}</b></summary>`}else if(!skip)h+=`<p><b>${esc(m[2])}</b></p>`}else if(!skip)h+=`<p>${esc(L)}</p>`});
+ if(open)h+="</details>";return h}
+async function live(en){const box=$("info"),c=en.c,iso=c.cca2;
+ const E=document.createElement("div"),W=document.createElement("div");
+ E.innerHTML='<div class="h">Экономика и показатели (Всемирный банк)</div><div class="wb src">Загружаю…</div>';
+ W.innerHTML='<div class="h">Статья в Википедии</div><div class="wk src">Загружаю статью…</div>';box.append(E,W);
+ if(iso)(async()=>{try{
+  const meta=await J(`https://api.worldbank.org/v2/country/${iso}?format=json`),m=meta[1]&&meta[1][0];
+  const rows=await Promise.all(IND.map(async([k,l,f])=>{try{const r=await J(`https://api.worldbank.org/v2/country/${iso}/indicator/${k}?format=json&mrnev=1`),d=r[1]&&r[1][0];return d&&d.value!=null?row(l,f(d.value)+` <small style="color:var(--m)">(${d.date})</small>`):""}catch(e){return""}}));
+  if(sel!==en)return;const el=E.querySelector(".wb");el.className="wb";
+  el.innerHTML=(m?row("Уровень дохода",m.incomeLevel.value)+row("Группа кредитования",m.lendingType.value):"")+rows.join("")||"Нет данных.";
+ }catch(e){E.querySelector(".wb").textContent="Не удалось загрузить данные."}})();
+ else E.querySelector(".wb").textContent="Нет данных для этой территории.";
+ try{const rn=(c.translations&&c.translations.rus&&c.translations.rus.common)||en.ru;let pg=null;
+  for(const t of [rn,rn+" (государство)",rn+" (страна)"]){const r=await J(`https://ru.wikipedia.org/w/api.php?action=query&format=json&origin=*&redirects=1&prop=extracts|pageimages|pageprops&ppprop=wikibase_item&explaintext=1&piprop=thumbnail&pithumbsize=500&titles=${encodeURIComponent(t)}`),p=Object.values(r.query.pages)[0];
+   if(p.extract&&p.extract.length>800&&!/может означать|многозначн/.test(p.extract.slice(0,400))){pg=p;break}}
+  if(sel!==en)return;if(!pg)throw 0;if(pg.pageprops&&pg.pageprops.wikibase_item)wd(pg.pageprops.wikibase_item,en,E);
+  const el=W.querySelector(".wk");el.className="wk";el.innerHTML=(pg.thumbnail?`<img src="${pg.thumbnail.source}" alt="">`:"")+wk(pg.extract)+`<p class="src">Источник: <a target="_blank" rel="noopener" href="https://ru.wikipedia.org/wiki/${encodeURIComponent(pg.title)}">Википедия</a>, лицензия CC BY-SA.</p>`;
+ }catch(e){if(sel===en)W.querySelector(".wk").textContent="Статья не найдена или нет доступа к Википедии."}}
+// ---------- Wikidata: leaders, symbols, organizations + hover tooltip ----------
+async function wd(q,en,E){try{
+ const W="https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&origin=*&",r=await J(`${W}ids=${q}&props=claims`),cl=r.entities[q].claims||{};
+ const vals=p=>(cl[p]||[]).filter(x=>x.rank!=="deprecated"&&!(x.qualifiers&&x.qualifiers.P582)).map(x=>({v:x.mainsnak.datavalue&&x.mainsnak.datavalue.value})).filter(x=>x.v);
+ const ids=new Set();["P35","P6","P85","P610","P463"].forEach(p=>vals(p).forEach(x=>x.v.id&&ids.add(x.v.id)));
+ const lab={},arr=[...ids];
+ for(let i=0;i<arr.length;i+=50){const l=await J(`${W}ids=${arr.slice(i,i+50).join("|")}&props=labels&languages=ru|en`);Object.entries(l.entities).forEach(([k,e])=>{const L=e.labels||{};lab[k]=(L.ru||L.en||{}).value})}
+ const names=p=>vals(p).map(x=>lab[x.v.id]).filter(Boolean),yr=t=>String(t).replace(/^\+/,"").slice(0,10);
+ const mot=vals("P1451").map(x=>x.v.text).join("; "),inc=vals("P571")[0],hdi=vals("P1081").pop(),orgs=names("P463");
+ if(sel!==en)return;
+ const h=row("Глава государства",names("P35").join(", "))+row("Глава правительства",names("P6").join(", "))+row("Гимн",names("P85").join(", "))+row("Девиз",esc(mot))+row("Образование государства",inc?yr(inc.v.time):"")+row("ИРЧ (индекс развития)",hdi?(+hdi.v.amount).toFixed(3):"")+row("Высшая точка",names("P610").join(", "))+(orgs.length?`<div class="r"><span>Организации</span><div class="chips">${orgs.slice(0,30).map(o=>`<button disabled>${esc(o)}</button>`).join("")}</div></div>`:"");
+ if(h){const d=document.createElement("div");d.innerHTML='<div class="h">Руководство, символы, организации (Wikidata)</div>'+h;E.before(d)}
+}catch(e){}}
+const tip=document.createElement("div");tip.style.cssText="position:fixed;pointer-events:none;background:rgba(10,16,30,.92);border:1px solid var(--l);border-radius:8px;padding:4px 9px;font-size:13px;display:none;z-index:5";document.body.appendChild(tip);
+let hvT=0;cv.addEventListener("pointermove",e=>{if(down||e.buttons||performance.now()-hvT<50||!globe)return;hvT=performance.now();
+ mv.set(e.clientX/innerWidth*2-1,-(e.clientY/innerHeight)*2+1);rc.setFromCamera(mv,cam);const h=rc.intersectObject(globe)[0];if(!h){tip.style.display="none";cv.style.cursor="grab";return}
+ const p=grp.worldToLocal(h.point.clone()).normalize(),lat=Math.asin(p.y)*R2D,lon=Math.atan2(-p.z,p.x)*R2D;
+ const f=entries.find(en=>lon>=en.b[0]&&lon<=en.b[2]&&lat>=en.b[1]&&lat<=en.b[3]&&en.polys.some(q=>inPoly(q,lon,lat)));
+ if(f){tip.textContent=(f.c.flag||"")+" "+f.ru;tip.style.left=e.clientX+14+"px";tip.style.top=e.clientY+14+"px";tip.style.display="block";cv.style.cursor="pointer"}else{tip.style.display="none";cv.style.cursor="grab"}});
+// ---------- start ----------
+const imp=async u=>(await import(u)).default;
+(async()=>{
+  let topo,cd=[];
+  try{topo=await imp("https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/countries-50m.json/+esm")}catch(e){$("st").textContent="Не удалось загрузить границы стран.";return}
+  try{cd=await imp("https://cdn.jsdelivr.net/npm/world-countries@5.0.0/countries.json/+esm")}catch(e){}
+  await loadXD();
+  const feats=topojson.feature(topo,topo.objects.countries).features,byN={};cd.forEach(c=>byN[c.ccn3]=c);
+  await new Promise(r=>setTimeout(r,30));
+  let bm=null,ok=false;
+try{
+ const P="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/textures/planets/",L=u=>new Promise((res,rej)=>{const i=new Image();i.crossOrigin="anonymous";i.onload=()=>res(i);i.onerror=rej;i.src=P+u});
+ const [dI,nI,cI,nmI,spI]=await Promise.all([L("earth_atmos_2048.jpg"),L("earth_lights_2048.png"),L("earth_clouds_1024.png"),L("earth_normal_2048.jpg"),L("earth_specular_2048.jpg")]);
+ const cc=document.createElement("canvas");cc.width=1024;cc.height=512;const cx=cc.getContext("2d");cx.drawImage(cI,0,0,1024,512);const id=cx.getImageData(0,0,1024,512),p=id.data;
+ for(let i=0;i<p.length;i+=4){const a=p[i+3]<250?p[i+3]:p[i];p[i]=p[i+1]=p[i+2]=Math.min(255,a*1.15);p[i+3]=255}
+ cx.putImageData(id,0,0);BUMP=nmI;SPEC=spI;REAL=true;planet(dI,nI,cc);ok=true;
+ const bc=document.createElement("canvas");bc.width=2048;bc.height=1024;const bx=bc.getContext("2d");bx.strokeStyle="rgba(255,255,255,.45)";bx.lineWidth=1.2;feats.forEach(f=>{tracePath(bx,f,2048,1024);bx.stroke()});
+ bm=new THREE.Mesh(new THREE.SphereGeometry(1.0025,128,96),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(bc),transparent:true,depthWrite:false}));grp.add(bm);
+}catch(e){}
+if(!ok){const [d,n,c,b]=buildTextures2(feats);BUMP=SPEC=b;planet(d,n,c);$("bd").disabled=true}
+addAtm();$("bd").onchange=e=>{if(bm)bm.visible=e.target.checked};
+  feats.forEach(f=>{const cc=byN[f.id]||{name:{common:f.properties.name}},ru=(cc.translations&&cc.translations.rus&&cc.translations.rus.common)||f.properties.name;
+    let b=[180,90,-180,-90];const ps=polys(f.geometry);ps.forEach(p=>p[0].forEach(q=>{b=[Math.min(b[0],q[0]),Math.min(b[1],q[1]),Math.max(b[2],q[0]),Math.max(b[3],q[1])]}));
+    const en={f,c:cc,ru,name:f.properties.name,polys:ps,b,ctr:[(b[1]+b[3])/2,(b[0]+b[2])/2]};entries.push(en);if(cc.cca3)byC[cc.cca3]=en});
+  $("dl").innerHTML=entries.map(e=>`<option value="${e.ru}">`).join("");
+  grp.quaternion.setFromUnitVectors(ll2v(50,6),new THREE.Vector3(0,0,1));
+  $("st").remove();{const e0=byC[location.hash.slice(1)];if(e0)show(e0)}
+  let last=performance.now();
+  (function loop(t){requestAnimationFrame(loop);const dt=t-last;last=t;
+    if(playing){tOff+=dt*3600;$("sl").value=Math.max(-1440,Math.min(1440,tOff/6e4))}
+    const ms=Date.now()+tOff;sunAt(ms);uni.t.value=(ms*3e-9)%1;glow.position.copy(sunObj).applyQuaternion(grp.quaternion).multiplyScalar(40);uni.cam.value.copy(grp.worldToLocal(cam.position.clone()));
+    if(globe){globe.material.uniforms.cam.value.copy(uni.cam.value)}
+    if(tq){grp.quaternion.slerp(tq,.1);if(grp.quaternion.angleTo(tq)<.002)tq=null}
+    const dd=new Date(ms);$("clk").textContent=dd.toISOString().slice(0,16).replace("T"," ");
+    document.querySelectorAll("[data-tz]").forEach(el=>{try{el.textContent=new Date(ms).toLocaleString("ru-RU",{timeZone:el.dataset.tz,weekday:"short",hour:"2-digit",minute:"2-digit"})}catch(e){}});document.querySelectorAll(".tz").forEach(el=>{const l=new Date(ms+el.dataset.l/15*36e5);el.textContent="≈ "+l.toISOString().slice(11,16)});
+    ren.render(scene,cam)})(last);
+})();
+</script></body></html>
